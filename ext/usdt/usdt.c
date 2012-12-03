@@ -1,10 +1,11 @@
 #include <ruby.h>
 #include "usdt.h"
 
-VALUE USDT;
-VALUE USDT_Provider;
-VALUE USDT_Probe;
-VALUE USDT_Error;
+static VALUE USDT;
+static VALUE USDT_Provider;
+static VALUE USDT_Probe;
+static VALUE USDT_Error;
+static VALUE cJSON;
 
 static VALUE provider_create(VALUE self, VALUE name, VALUE mod);
 static VALUE provider_probe(int argc, VALUE *argv, VALUE self);
@@ -13,6 +14,10 @@ static VALUE provider_enable(VALUE self);
 static VALUE provider_disable(VALUE self);
 static VALUE probe_enabled(VALUE self);
 static VALUE probe_fire(int argc, VALUE *argv, VALUE self);
+
+static VALUE t_int;
+static VALUE t_str;
+static VALUE t_json;
 
 void Init_usdt() {
   USDT = rb_define_module("USDT");
@@ -29,6 +34,13 @@ void Init_usdt() {
   USDT_Probe = rb_define_class_under(USDT, "Probe", rb_cObject);
   rb_define_method(USDT_Probe, "enabled?", probe_enabled, 0);
   rb_define_method(USDT_Probe, "fire", probe_fire, -1);
+  rb_define_attr(USDT_Probe, "arguments", 1, 0);
+
+  t_int = ID2SYM(rb_intern("integer"));
+  t_str = ID2SYM(rb_intern("string"));
+  t_json = ID2SYM(rb_intern("json"));
+
+  cJSON = rb_const_get(rb_cObject, rb_intern("JSON"));
 }
 
 /**
@@ -59,39 +71,52 @@ static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
   const char *func = rb_id2name(rb_to_id(argv[0]));
   const char *name = rb_id2name(rb_to_id(argv[1]));
   const char *types[USDT_ARG_MAX];
-  size_t i, pargc = 0;
-  size_t t_int = rb_intern("integer");
-  size_t t_str = rb_intern("string");
+  size_t i;
 
+  usdt_probedef_t **probe;
+  probe = ALLOC(usdt_probedef_t *);
+
+  VALUE rbProbe = Data_Wrap_Struct(USDT_Probe, NULL, free, probe);
+  VALUE arguments = rb_ary_new2(USDT_ARG_MAX);
+  rb_iv_set(rbProbe, "@arguments", arguments);
+
+  VALUE arg;
   for (i = 0; i < USDT_ARG_MAX; i++) {
     if (i < argc - 2) {
       Check_Type(argv[i+2], T_SYMBOL);
-      if (t_int == rb_to_id(argv[i+2])) {
+
+      if (t_int == ID2SYM(rb_to_id(argv[i+2]))) {
         types[i] = "int";
-        pargc++;
-      } else if (t_str == rb_to_id(argv[i+2])) {
+        rb_ary_push(arguments, t_int);
+      }
+      else if (t_str == ID2SYM(rb_to_id(argv[i+2]))) {
         types[i] = "char *";
-        pargc++;
-      } else {
+        rb_ary_push(arguments, t_str);
+      }
+      else if (t_json == ID2SYM(rb_to_id(argv[i+2]))) {
+        types[i] = "char *";
+        rb_ary_push(arguments, t_json);
+      }
+      else {
         types[i] = NULL;
       }
-    } else {
+    }
+    else {
       types[i] = NULL;
     }
   }
 
-  usdt_provider_t *provider = DATA_PTR(self);
-
-  usdt_probedef_t **probe;
-  probe = ALLOC(usdt_probedef_t *);
+  size_t pargc = RARRAY_LEN(arguments);
   *probe = usdt_create_probe(func, name, pargc, types);
 
+  usdt_provider_t *provider = DATA_PTR(self);
+
   if ((usdt_provider_add_probe(provider, *probe) == 0)) {
-    VALUE rbProbe = Data_Wrap_Struct(USDT_Probe, NULL, free, probe);
     return rbProbe;
   }
   else {
     rb_raise(USDT_Error, "%s", usdt_errstr(provider));
+    return Qnil;
   }
 }
 
@@ -114,11 +139,11 @@ static VALUE provider_remove_probe(VALUE self, VALUE probe) {
 static VALUE provider_enable(VALUE self) {
   usdt_provider_t *provider = DATA_PTR(self);
   int status = usdt_provider_enable(provider);
-  if (status == 0) {
+
+  if (status == 0)
     return Qtrue;
-  } else {
+  else
     rb_raise(USDT_Error, "%s", usdt_errstr(provider));
-  }
 }
 
 /**
@@ -131,6 +156,7 @@ static VALUE provider_disable(VALUE self) {
     return Qtrue;
   } else {
     rb_raise(USDT_Error, "%s", usdt_errstr(provider));
+    return Qnil;
   }
 }
 
@@ -141,35 +167,41 @@ static VALUE probe_enabled(VALUE self) {
   usdt_probedef_t **p = DATA_PTR(self);
   usdt_probedef_t *pd = *p;
 
-  if (usdt_is_enabled(pd->probe) == 0) {
+  if (usdt_is_enabled(pd->probe) == 0)
     return Qfalse;
-  } else {
+  else
     return Qtrue;
-  }
 }
 
 /**
  * USDT::Probe#fire *args
  */
 static VALUE probe_fire(int argc, VALUE *argv, VALUE self) {
-  if (probe_enabled(self) == Qfalse) {
-    return Qfalse;
-  }
-
   usdt_probedef_t **p = DATA_PTR(self);
   usdt_probedef_t *probedef = *p;
 
   void *pargs[USDT_ARG_MAX];
   size_t i;
 
+  if (probe_enabled(self) == Qfalse)
+    return Qfalse;
+
   for (i = 0; i < probedef->argc; i++) {
-    if (probedef->types[i] == USDT_ARGTYPE_STRING) {
+    VALUE arg = RARRAY_PTR(rb_iv_get(self, "@arguments"))[i];
+
+    if (arg == t_str) {
       Check_Type(argv[i], T_STRING);
       pargs[i] = (void *) RSTRING_PTR(argv[i]);
-    } else if (probedef->types[i] == USDT_ARGTYPE_INTEGER) {
+    }
+    else if (arg == t_int) {
       Check_Type(argv[i], T_FIXNUM);
       pargs[i] = (void *) FIX2INT(argv[i]);
-    } else {
+    }
+    else if (arg == t_json) {
+      VALUE json = rb_funcall(cJSON, rb_intern("generate"), 1, argv[i]);
+      pargs[i] = (void *) RSTRING_PTR(json);
+    }
+    else {
       pargs[i] = NULL;
     }
   }

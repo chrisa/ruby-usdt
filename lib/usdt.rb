@@ -1,2 +1,3 @@
-require "usdt/version"
+require 'json'
+require 'usdt/version'
 require 'usdt/usdt'
