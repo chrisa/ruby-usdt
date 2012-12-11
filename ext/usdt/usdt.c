@@ -15,6 +15,9 @@ static VALUE provider_disable(VALUE self);
 static VALUE probe_enabled(VALUE self);
 static VALUE probe_fire(int argc, VALUE *argv, VALUE self);
 
+static void provider_free(void *provider);
+static void probe_free(void *probe);
+
 static VALUE t_int;
 static VALUE t_str;
 static VALUE t_json;
@@ -55,7 +58,7 @@ static VALUE provider_create(VALUE self, VALUE name, VALUE mod) {
 
   usdt_provider_t* p = usdt_create_provider(namestr, modstr);
 
-  VALUE rbProvider = Data_Wrap_Struct(USDT_Provider, NULL, free, p);
+  VALUE rbProvider = Data_Wrap_Struct(USDT_Provider, NULL, provider_free, p);
 
   if (rb_block_given_p()) {
     rb_yield(rbProvider);
@@ -76,7 +79,7 @@ static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
   usdt_probedef_t **probe;
   probe = ALLOC(usdt_probedef_t *);
 
-  VALUE rbProbe = Data_Wrap_Struct(USDT_Probe, NULL, free, probe);
+  VALUE rbProbe = Data_Wrap_Struct(USDT_Probe, NULL, probe_free, probe);
   VALUE arguments = rb_ary_new2(USDT_ARG_MAX);
   rb_iv_set(rbProbe, "@arguments", arguments);
 
@@ -208,4 +211,15 @@ static VALUE probe_fire(int argc, VALUE *argv, VALUE self) {
 
   usdt_fire_probe(probedef->probe, probedef->argc, pargs);
   return Qtrue;
+}
+
+static void provider_free(void *p) {
+  usdt_provider_t *provider = p;
+  usdt_provider_disable(provider);
+  usdt_provider_free(provider);
+}
+
+static void probe_free(void *p) {
+  usdt_probedef_t **probedef = p;
+  usdt_probe_release(*probedef);
 }
