@@ -17,7 +17,11 @@ Gem::Specification.new do |s|
   s.summary     = "Native DTrace probes for ruby."
   s.files        = Dir.glob("{lib,ext}/**/*") + %w(README.md LICENSE.md)
   s.require_paths = ['lib', 'ext']
-  if Config::CONFIG['MINOR'].to_i <= 8
-    s.add_dependency('json', '> 0.0.0')
-  end
+
+  s.add_dependency('json', '> 0.0.0')
+
+  s.add_development_dependency "ruby-dtrace-consumer", "~> 0.3.0"
+  s.add_development_dependency "flexmock"
+  s.add_development_dependency "rspec"
+  s.add_development_dependency "rake"
 end
