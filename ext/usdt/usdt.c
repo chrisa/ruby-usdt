@@ -7,7 +7,7 @@ static VALUE USDT_Probe;
 static VALUE USDT_Error;
 static VALUE cJSON;
 
-static VALUE provider_create(VALUE self, VALUE name, VALUE mod);
+static VALUE provider_create(int argc, VALUE *argv, VALUE self);
 static VALUE provider_probe(int argc, VALUE *argv, VALUE self);
 static VALUE provider_remove_probe(VALUE self, VALUE probe);
 static VALUE provider_enable(VALUE self);
@@ -28,7 +28,7 @@ void Init_usdt() {
   USDT_Error = rb_define_class_under(USDT, "Error", rb_eRuntimeError);
 
   USDT_Provider = rb_define_class_under(USDT, "Provider", rb_cObject);
-  rb_define_singleton_method(USDT_Provider, "create", provider_create, 2);
+  rb_define_singleton_method(USDT_Provider, "create", provider_create, -1);
   rb_define_method(USDT_Provider, "probe", provider_probe, -1);
   rb_define_method(USDT_Provider, "remove_probe", provider_remove_probe, 1);
   rb_define_method(USDT_Provider, "enable", provider_enable, 0);
@@ -46,18 +46,45 @@ void Init_usdt() {
   cJSON = rb_const_get(rb_cObject, rb_intern("JSON"));
 }
 
+static char *create_module_name(VALUE self, char *module) {
+  snprintf(module, sizeof(module), "mod-%p", (void *)self);
+  return module;
+}
+
 /**
- * USDT::Provider.create :name, :modname
+ * USDT::Provider.create :name, :modname?
  */
-static VALUE provider_create(VALUE self, VALUE name, VALUE mod) {
-  Check_Type(name, T_SYMBOL);
-  Check_Type(mod, T_SYMBOL);
+static VALUE provider_create(int argc, VALUE *argv, VALUE self) {
+  const char *name, *mod;
+  char module[128];
 
-  const char *namestr = rb_id2name(rb_to_id(name));
-  const char *modstr = rb_id2name(rb_to_id(mod));
+  if (argc == 0 || argc > 2) {
+    rb_raise(USDT_Error, "1 or 2 arguments required; %d provided", argc);
+    return Qnil;
+  }
 
-  usdt_provider_t* p = usdt_create_provider(namestr, modstr);
+  if (RB_TYPE_P(argv[0], T_SYMBOL))
+    name = rb_id2name(rb_to_id(argv[0]));
+  else if (RB_TYPE_P(argv[0], T_STRING))
+    name = RSTRING_PTR(argv[0]);
+  else
+    rb_raise(USDT_Error, "provider name must be a symbol or string");
 
+  if (argc == 2) {
+    if (NIL_P(argv[1]))
+      mod = create_module_name(self, module);
+    else if (RB_TYPE_P(argv[1], T_SYMBOL))
+      mod = rb_id2name(rb_to_id(argv[1]));
+    else if (RB_TYPE_P(argv[1], T_STRING))
+      mod = RSTRING_PTR(argv[1]);
+    else
+      rb_raise(USDT_Error, "provider module must be a symbol or string, or nil");
+  }
+  else {
+    mod = create_module_name(self, module);
+  }
+
+  usdt_provider_t* p = usdt_create_provider(name, mod);
   VALUE rbProvider = Data_Wrap_Struct(USDT_Provider, NULL, provider_free, p);
 
   if (rb_block_given_p()) {
@@ -71,8 +98,33 @@ static VALUE provider_create(VALUE self, VALUE name, VALUE mod) {
  * USDT::Provider#probe(func, name, pargs*)
  */
 static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
-  const char *func = rb_id2name(rb_to_id(argv[0]));
-  const char *name = rb_id2name(rb_to_id(argv[1]));
+  const char *func, *name;
+
+  if (argc == 0) {
+    rb_raise(USDT_Error, "at least one argument required");
+    return Qnil;
+  }
+  if (argc > 2 + USDT_ARG_MAX) {
+    rb_raise(USDT_Error, "maximum number of probe arguments: %d", USDT_ARG_MAX);
+    return Qnil;
+  }
+
+  if (NIL_P(argv[0]))
+    func = "func";
+  else if (RB_TYPE_P(argv[0], T_SYMBOL))
+    func = rb_id2name(rb_to_id(argv[0]));
+  else if (RB_TYPE_P(argv[0], T_STRING))
+    func = RSTRING_PTR(argv[0]);
+  else
+    rb_raise(USDT_Error, "probe function must be a symbol or string, or nil");
+
+  if (RB_TYPE_P(argv[1], T_SYMBOL))
+    name = rb_id2name(rb_to_id(argv[1]));
+  else if (RB_TYPE_P(argv[1], T_STRING))
+    name = RSTRING_PTR(argv[1]);
+  else
+    rb_raise(USDT_Error, "probe name must be a symbol or string");
+
   const char *types[USDT_ARG_MAX];
   size_t i;
 
