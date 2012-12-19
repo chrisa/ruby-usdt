@@ -30,5 +30,8 @@ def dtrace_data_of(code)
   c = DTrace::Consumer.new(@dtp)
   c.consume_once { |d| data << d }
 
+  @dtp.stop
+  @dtp.close
+
   data
 end

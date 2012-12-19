@@ -5,7 +5,6 @@ static VALUE USDT;
 static VALUE USDT_Provider;
 static VALUE USDT_Probe;
 static VALUE USDT_Error;
-static VALUE cJSON;
 
 static VALUE provider_create(int argc, VALUE *argv, VALUE self);
 static VALUE provider_probe(int argc, VALUE *argv, VALUE self);
@@ -42,8 +41,6 @@ void Init_usdt() {
   t_int = ID2SYM(rb_intern("integer"));
   t_str = ID2SYM(rb_intern("string"));
   t_json = ID2SYM(rb_intern("json"));
-
-  cJSON = rb_const_get(rb_cObject, rb_intern("JSON"));
 }
 
 static char *create_module_name(VALUE self, char *module) {
@@ -99,6 +96,7 @@ static VALUE provider_create(int argc, VALUE *argv, VALUE self) {
  */
 static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
   const char *func, *name;
+  size_t i;
 
   if (argc == 0) {
     rb_raise(USDT_Error, "at least one argument required");
@@ -125,21 +123,21 @@ static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
   else
     rb_raise(USDT_Error, "probe name must be a symbol or string");
 
-  const char *types[USDT_ARG_MAX];
-  size_t i;
+  for (i = 0; i < USDT_ARG_MAX; i++)
+    if (i < argc - 2)
+      Check_Type(argv[i+2], T_SYMBOL);
 
-  usdt_probedef_t **probe;
-  probe = ALLOC(usdt_probedef_t *);
+  usdt_probedef_t **probe = ALLOC(usdt_probedef_t *);
 
   VALUE rbProbe = Data_Wrap_Struct(USDT_Probe, NULL, probe_free, probe);
   VALUE arguments = rb_ary_new2(USDT_ARG_MAX);
   rb_iv_set(rbProbe, "@arguments", arguments);
 
   VALUE arg;
+  const char *types[USDT_ARG_MAX];
+
   for (i = 0; i < USDT_ARG_MAX; i++) {
     if (i < argc - 2) {
-      Check_Type(argv[i+2], T_SYMBOL);
-
       if (t_int == ID2SYM(rb_to_id(argv[i+2]))) {
         types[i] = "int";
         rb_ary_push(arguments, t_int);
@@ -179,6 +177,9 @@ static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
  * USDT::Provider#remove_probe(probe)
  */
 static VALUE provider_remove_probe(VALUE self, VALUE probe) {
+  if (rb_class_of(probe) != USDT_Probe)
+    rb_raise(USDT_Error, "argument to remove_probe must be a Probe object");
+
   usdt_provider_t *provider = DATA_PTR(self);
   usdt_probedef_t **p = DATA_PTR(probe);
   usdt_probedef_t *probedef = *p;
@@ -253,7 +254,7 @@ static VALUE probe_fire(int argc, VALUE *argv, VALUE self) {
       pargs[i] = (void *) FIX2INT(argv[i]);
     }
     else if (arg == t_json) {
-      VALUE json = rb_funcall(cJSON, rb_intern("generate"), 1, argv[i]);
+      VALUE json = rb_funcall(argv[i], rb_intern("to_json"), 0);
       pargs[i] = (void *) RSTRING_PTR(json);
     }
     else {
