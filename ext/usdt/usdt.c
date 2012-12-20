@@ -60,9 +60,9 @@ static VALUE provider_create(int argc, VALUE *argv, VALUE self) {
     return Qnil;
   }
 
-  if (RB_TYPE_P(argv[0], T_SYMBOL))
+  if (SYMBOL_P(argv[0]))
     name = rb_id2name(rb_to_id(argv[0]));
-  else if (RB_TYPE_P(argv[0], T_STRING))
+  else if (TYPE(argv[0]) == T_STRING)
     name = RSTRING_PTR(argv[0]);
   else
     rb_raise(USDT_Error, "provider name must be a symbol or string");
@@ -70,9 +70,9 @@ static VALUE provider_create(int argc, VALUE *argv, VALUE self) {
   if (argc == 2) {
     if (NIL_P(argv[1]))
       mod = create_module_name(self, module);
-    else if (RB_TYPE_P(argv[1], T_SYMBOL))
+    else if (SYMBOL_P(argv[1]))
       mod = rb_id2name(rb_to_id(argv[1]));
-    else if (RB_TYPE_P(argv[1], T_STRING))
+    else if (TYPE(argv[1]) == T_STRING)
       mod = RSTRING_PTR(argv[1]);
     else
       rb_raise(USDT_Error, "provider module must be a symbol or string, or nil");
@@ -109,16 +109,16 @@ static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
 
   if (NIL_P(argv[0]))
     func = "func";
-  else if (RB_TYPE_P(argv[0], T_SYMBOL))
+  else if (SYMBOL_P(argv[0]))
     func = rb_id2name(rb_to_id(argv[0]));
-  else if (RB_TYPE_P(argv[0], T_STRING))
+  else if (TYPE(argv[0]) ==  T_STRING)
     func = RSTRING_PTR(argv[0]);
   else
     rb_raise(USDT_Error, "probe function must be a symbol or string, or nil");
 
-  if (RB_TYPE_P(argv[1], T_SYMBOL))
+  if (SYMBOL_P(argv[1]))
     name = rb_id2name(rb_to_id(argv[1]));
-  else if (RB_TYPE_P(argv[1], T_STRING))
+  else if (TYPE(argv[1]) == T_STRING)
     name = RSTRING_PTR(argv[1]);
   else
     rb_raise(USDT_Error, "probe name must be a symbol or string");
@@ -194,12 +194,16 @@ static VALUE provider_remove_probe(VALUE self, VALUE probe) {
  */
 static VALUE provider_enable(VALUE self) {
   usdt_provider_t *provider = DATA_PTR(self);
+
   int status = usdt_provider_enable(provider);
 
-  if (status == 0)
+  if (status == 0) {
     return Qtrue;
-  else
+  }
+  else {
     rb_raise(USDT_Error, "%s", usdt_errstr(provider));
+    return Qnil;
+  }
 }
 
 /**
@@ -207,10 +211,13 @@ static VALUE provider_enable(VALUE self) {
  */
 static VALUE provider_disable(VALUE self) {
   usdt_provider_t *provider = DATA_PTR(self);
+
   int status = usdt_provider_disable(provider);
+
   if (status == 0) {
     return Qtrue;
-  } else {
+  }
+  else {
     rb_raise(USDT_Error, "%s", usdt_errstr(provider));
     return Qnil;
   }
