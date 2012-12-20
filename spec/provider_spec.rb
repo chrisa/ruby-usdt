@@ -101,7 +101,7 @@ describe USDT::Provider do
       @provider.enable
 
       data = dtrace_data_of('foo*:::{ trace("foo"); }') do
-        @probe.fire
+        @probe.fire.should == true
       end
 
       data.length.should == 1
@@ -130,7 +130,7 @@ describe USDT::Provider do
       @provider.enable
 
       data = dtrace_data_of('foo*:::{ trace(arg0); }') do
-        @probe.fire(42)
+        @probe.fire(42).should == true
       end
 
       data.length.should == 1
@@ -144,7 +144,7 @@ describe USDT::Provider do
       @provider.enable
 
       data = dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
-        @probe.fire('foo')
+        @probe.fire('foo').should == true
       end
 
       data.length.should == 1
@@ -158,7 +158,7 @@ describe USDT::Provider do
       @provider.enable
 
       data = dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
-        @probe.fire({ :foo => 1 })
+        @probe.fire({ :foo => 1 }).should == true
       end
 
       data.length.should == 1
@@ -232,7 +232,7 @@ describe USDT::Provider do
       arg = { :foo => 'bar' }
 
       data = dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
-        @probe.fire(arg)
+        @probe.fire(arg).should == true
       end
 
       data.length.should == 1
@@ -248,7 +248,7 @@ describe USDT::Provider do
       arg = [1, 2, 3]
 
       data = dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
-        @probe.fire(arg)
+        @probe.fire(arg).should == true
       end
 
       data.length.should == 1
@@ -264,7 +264,7 @@ describe USDT::Provider do
       arg = "foo"
 
       data = dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
-        @probe.fire(arg)
+        @probe.fire(arg).should == true
       end
 
       data.length.should == 1
@@ -280,12 +280,48 @@ describe USDT::Provider do
       arg = 1
 
       data = dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
-        @probe.fire(arg)
+        @probe.fire(arg).should == true
       end
 
       data.length.should == 1
       d = data.first
       d.data.first.value.should == '1'
+    end
+
+  end
+
+  describe "bad values for probe arguments" do
+
+    it "should not raise an error when string passed but probe not enabled" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :integer)
+      @provider.enable
+      @probe.fire("foo").should == false
+    end
+
+    it "should not raise an error when integer passed but probe not enabled" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :string)
+      @provider.enable
+      @probe.fire(1).should == false
+    end
+
+    it "should raise an error for a string passed to an integer argument" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :integer)
+      @provider.enable
+      dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
+        lambda { @probe.fire("foo") }.should raise_error
+      end
+    end
+
+    it "should raise an error for an integer passed to a string argument" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :string)
+      @provider.enable
+      dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
+        lambda { @probe.fire(1) }.should raise_error
+      end
     end
 
   end
