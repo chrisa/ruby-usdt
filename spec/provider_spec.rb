@@ -170,8 +170,16 @@ describe USDT::Provider do
 
   describe "create probes with various numbers of arguments" do
 
-    it "should create a probe with the maximum number of probes" do
+    it "should create a probe with the maximum number of integer probes" do
       args = (1..32).map {|i| :integer }
+      @provider = USDT::Provider.create(:foo)
+      @probe = @provider.probe('func', 'usdtprobe', *args)
+      @provider.enable
+      probe_count("foo#{$$}:::").should == 1
+    end
+
+    it "should create a probe with the maximum number of string probes" do
+      args = (1..32).map {|i| :string }
       @provider = USDT::Provider.create(:foo)
       @probe = @provider.probe('func', 'usdtprobe', *args)
       @provider.enable
@@ -321,6 +329,161 @@ describe USDT::Provider do
       @provider.enable
       dtrace_data_of('foo*:::{ trace(copyinstr(arg0)); }') do
         lambda { @probe.fire(1) }.should raise_error
+      end
+    end
+
+  end
+
+  describe "integer limits" do
+
+    if RbConfig::CONFIG['target_cpu'] == 'i386'
+
+      # Workaround for: 6978322 libdtrace compiler fails to sign extend certain variables
+      # http://mail.opensolaris.org/pipermail/dtrace-discuss/2010-August/008902.html
+
+      trace_min_max = <<EOD
+foo*:::
+{
+  this->max = (long) (int) arg0;
+  this->min = (long) (int) arg1;
+  trace(this->max);
+  trace(this->min);
+}
+EOD
+    else
+
+      trace_min_max = <<EOD
+foo*:::
+{
+  trace(arg0);
+  trace(arg1);
+}
+EOD
+    end
+
+    it "should handle 32 bit Fixnum max and min" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :integer, :integer)
+      @provider.enable
+
+      max = (2 ** 30) - 1
+      min = -(2 ** 30)
+
+      # should be Fixnum everywhere
+      max.class.should == Fixnum
+      min.class.should == Fixnum
+
+      data = dtrace_data_of(trace_min_max) do
+        @probe.fire(max, min).should == true
+      end
+
+      data.length.should == 1
+      d = data.first
+      d.data[0].value.should == max
+      d.data[1].value.should == min
+    end
+
+    it "should handle 32 bit INT_MAX and INT_MIN" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :integer, :integer)
+      @provider.enable
+
+      max = (2 ** 31) - 1
+      min = -(2 ** 31)
+
+      # should be Fixnum on x86_64
+      if RbConfig::CONFIG['target_cpu'] == 'i386'
+        max.class.should == Bignum
+        min.class.should == Bignum
+      else
+        max.class.should == Fixnum
+        min.class.should == Fixnum
+      end
+      data = dtrace_data_of(trace_min_max) do
+        @probe.fire(max, min).should == true
+      end
+
+      data.length.should == 1
+      d = data.first
+      d.data[0].value.should == max
+      d.data[1].value.should == min
+    end
+
+    it "should handle 64 bit ruby Fixnum min and max" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :integer, :integer)
+      @provider.enable
+
+      max = (2 ** 61) - 1
+      min = -(2 ** 61)
+
+      # should be Fixnum on x86_64
+      if RbConfig::CONFIG['target_cpu'] == 'i386'
+        max.class.should == Bignum
+        min.class.should == Bignum
+      else
+        max.class.should == Fixnum
+        min.class.should == Fixnum
+      end
+
+      data = dtrace_data_of(trace_min_max) do
+        if RbConfig::CONFIG['target_cpu'] == 'i386'
+          lambda { @probe.fire(max, min) }.should raise_error
+        else
+          @probe.fire(max, min).should == true
+        end
+      end
+
+      unless RbConfig::CONFIG['target_cpu'] == 'i386'
+        data.length.should == 1
+        d = data.first
+        d.data[0].value.should == max
+        d.data[1].value.should == min
+      end
+    end
+
+    it "should handle 64 bit INT_MAX and INT_MIN" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :integer, :integer)
+      @provider.enable
+
+      max = (2 ** 63) - 1
+      min = -(2 ** 63)
+
+      # should be Bignum everywhere
+      max.class.should == Bignum
+      min.class.should == Bignum
+
+      data = dtrace_data_of(trace_min_max) do
+        if RbConfig::CONFIG['target_cpu'] == 'i386'
+          lambda { @probe.fire(max, min) }.should raise_error
+        else
+          @probe.fire(max, min).should == true
+        end
+      end
+
+      unless RbConfig::CONFIG['target_cpu'] == 'i386'
+        data.length.should == 1
+        d = data.first
+        d.data[0].value.should == max
+        d.data[1].value.should == min
+      end
+    end
+
+    it "should raise an error for Bignums beyond 64 bits" do
+      @provider = USDT::Provider.create(:foo, :bar)
+      @probe = @provider.probe(:func, :usdtprobe, :integer, :integer)
+      @provider.enable
+
+      max = (2 ** 128) - 1
+      min = -(2 ** 128)
+
+      # should be Bignum everywhere
+      max.class.should == Bignum
+      min.class.should == Bignum
+
+      dtrace_data_of(trace_min_max) do
+        lambda { @probe.fire(max, min) }.should raise_error
       end
     end
 

@@ -139,7 +139,7 @@ static VALUE provider_probe(int argc, VALUE *argv, VALUE self) {
   for (i = 0; i < USDT_ARG_MAX; i++) {
     if (i < argc - 2) {
       if (t_int == ID2SYM(rb_to_id(argv[i+2]))) {
-        types[i] = "int";
+        types[i] = "long";
         rb_ary_push(arguments, t_int);
       }
       else if (t_str == ID2SYM(rb_to_id(argv[i+2]))) {
@@ -257,8 +257,7 @@ static VALUE probe_fire(int argc, VALUE *argv, VALUE self) {
       pargs[i] = (void *) RSTRING_PTR(argv[i]);
     }
     else if (arg == t_int) {
-      Check_Type(argv[i], T_FIXNUM);
-      pargs[i] = (void *) FIX2INT(argv[i]);
+      pargs[i] = (void *) NUM2LONG(argv[i]);
     }
     else if (arg == t_json) {
       VALUE json = rb_funcall(argv[i], rb_intern("to_json"), 0);
