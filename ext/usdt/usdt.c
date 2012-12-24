@@ -281,4 +281,5 @@ static void provider_free(void *p) {
 static void probe_free(void *p) {
   usdt_probedef_t **probedef = p;
   usdt_probe_release(*probedef);
+  free(probedef);
 }
